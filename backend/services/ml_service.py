@@ -1,30 +1,44 @@
-import joblib
-import numpy as np
 import os
+import sys
 
-# Get absolute path safely
+# Fix import path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, "ml_model", "predictive_maintenance_model.pkl")
+sys.path.append(BASE_DIR)
 
-# Load model once when server starts
-model = joblib.load(MODEL_PATH)
+from predict import predict_lstm
 
-def predict_failure(data):
+
+def get_prediction(data):
+    """
+    Calls ML model and formats response safely
+    """
+
     try:
-        input_data = np.array([[
-            data.get("air_temp"),
-            data.get("process_temp"),
-            data.get("rpm"),
-            data.get("torque"),
-            data.get("tool_wear")
-        ]])
+        score = predict_lstm(data)  # expected float
 
-        prediction = model.predict(input_data)[0]
+        # If predict_lstm returned an error dictionary
+        if isinstance(score, dict):
+            return score
 
-        if prediction == 1:
-            return "Machine Failure Likely ⚠️"
+        # Ensure score is numeric
+        score = float(score)
+
+        health_score = (1 - score) * 100
+
+        if score < 0.3:
+            status = "Healthy ✅"
+        elif score < 0.6:
+            status = "Warning ⚠️"
         else:
-            return "Machine is Healthy ✅"
+            status = "Failure Risk 🚨"
+
+        return {
+            "failure_probability": round(score, 4),
+            "health_score": round(health_score, 2),
+            "status": status
+        }
 
     except Exception as e:
-        return f"Prediction Error: {str(e)}"
+        return {
+            "error": str(e)
+        }
